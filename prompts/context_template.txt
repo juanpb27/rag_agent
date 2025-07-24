@@ -1,0 +1,6 @@
+CONTEXT INFORMATION:
+The following information from Draiver's knowledge base may be relevant to answer the user's question:
+
+{context}
+
+Use this context information to provide accurate answers. If the context doesn't contain relevant information for the user's question, acknowledge this limitation. 
