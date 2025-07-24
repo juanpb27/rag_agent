@@ -1,0 +1,26 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*.so
+
+# Environment
+.env
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VSCode or JetBrains IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# OS generated files
+*.swp
