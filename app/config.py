@@ -72,6 +72,16 @@ class Settings(BaseSettings):
         description="Path to the system prompt file"
     )
     
+    LOGO_PATH: str = Field(
+        default="frontend/assets/logo.png",
+        description="Path to the company logo file"
+    )
+    
+    BACKEND_URL: str = Field(
+        default="http://localhost:8000",
+        description="Backend API URL for the chat service"
+    )
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
