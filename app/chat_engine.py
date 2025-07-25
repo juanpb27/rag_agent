@@ -8,8 +8,8 @@ from pathlib import Path
 from anthropic import AsyncAnthropic
 
 from app.config import get_settings
-from app.services.rag_engine import get_relevant_chunks
-from app.services.memory import load_chat_history, save_message
+from app.retriever import get_relevant_chunks
+from app.memory import load_chat_history, save_message
 
 
 class ChatEngine:
@@ -20,7 +20,7 @@ class ChatEngine:
         self.settings = get_settings()
         self.client = AsyncAnthropic(api_key=self.settings.ANTHROPIC_API_KEY)
         self.model = self.settings.DEFAULT_MODEL
-        self.system_prompt = self._load_system_prompt()
+        self.system_prompt_template = self._load_system_prompt()
         
     def _load_system_prompt(self) -> str:
         """Load the system prompt from file."""
@@ -32,36 +32,28 @@ class ChatEngine:
             print(f"Error loading system prompt: {e}")
             return "You are a helpful assistant."
     
-    def _build_context_prompt(self, rag_chunks: List[str]) -> str:
-        """Build the context section from RAG chunks."""
-        if not rag_chunks:
-            return ""
-        
-        try:
-            template_path = Path(self.settings.CONTEXT_PROMPT_PATH)
-            with open(template_path, "r", encoding="utf-8") as f:
-                template = f.read().strip()
-            
-            context_text = "\n\n".join(rag_chunks)
-            return template.format(context=context_text)
-        except Exception as e:
-            print(f"Error building context prompt: {e}")
-            return ""
-    
     def _extract_text(self, content_blocks: List[Any]) -> str:
         """Extract text content from Anthropic response content blocks."""
-        return "".join(block["text"] for block in content_blocks if "text" in block)
-    
+        return "".join(block.text for block in content_blocks if hasattr(block, "text"))
+ 
     async def chat(self, session_id: str, user_input: str) -> str:
         """Main entrypoint for handling user queries."""
         try:
-            chat_history = await load_chat_history(session_id)
-            rag_chunks = await get_relevant_chunks(f"query: {user_input}")
+            chat_history = load_chat_history(session_id)
+            rag_chunks = get_relevant_chunks(f"query: {user_input}")
+
+            if not rag_chunks:
+                print("No relevant chunks found for the user query.")
             
-            context_prompt = self._build_context_prompt(rag_chunks)
-            full_system_prompt = self.system_prompt
-            if context_prompt:
-                full_system_prompt = f"{self.system_prompt}\n\n---\n\n{context_prompt}"
+            # Prepare the retrieved chunks text
+            retrieved_chunks_text = "\n\n".join(rag_chunks) if rag_chunks else ""
+            
+            # Replace placeholders in the system prompt template
+            full_system_prompt = self.system_prompt_template.format(
+                retrieved_chunks=retrieved_chunks_text,
+                user_query=user_input
+            )
+            print(f"Full system prompt: {full_system_prompt}")
             
             messages = []
             for msg in chat_history:
@@ -80,8 +72,8 @@ class ChatEngine:
             response = await self.client.messages.create(**request_params)
             response_text = self._extract_text(response.content)
             
-            await save_message(session_id, "user", user_input)
-            await save_message(session_id, "assistant", response_text)
+            save_message(session_id, "user", user_input)
+            save_message(session_id, "assistant", response_text)
             
             return response_text.strip()
             
@@ -90,8 +82,8 @@ class ChatEngine:
             error_message = "I'm sorry, I encountered an error while processing your request. Please try again."
             
             try:
-                await save_message(session_id, "user", user_input)
-                await save_message(session_id, "assistant", error_message)
+                save_message(session_id, "user", user_input)
+                save_message(session_id, "assistant", error_message)
             except Exception as e:
                 print(f"Error saving error message to memory: {e}")
             

@@ -24,3 +24,6 @@ Thumbs.db
 
 # OS generated files
 *.swp
+
+# FAISS vectorstore files
+data/vectorstore/

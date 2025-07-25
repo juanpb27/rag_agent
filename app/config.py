@@ -2,7 +2,8 @@
 Configuration module for RAG Agent application.
 """
 
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
+from pydantic import Field
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -35,9 +36,23 @@ class Settings(BaseSettings):
         description="Size of text chunks for processing (between 100-2000 characters)"
     )
     
+    CHUNK_OVERLAP: int = Field(
+        default=100,
+        ge=50,
+        le=200,
+        description="Number of characters that overlap between chunks (between 50-200)"
+    )
+    
     EMBEDDING_MODEL: str = Field(
         default="BAAI/bge-small-en-v1.5",
         description="Sentence transformer model name for embeddings"
+    )
+    
+    TOP_K: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Number of top results to return from vectorstore queries"
     )
     
     DEFAULT_MODEL: str = Field(
@@ -46,13 +61,8 @@ class Settings(BaseSettings):
     )
     
     SYSTEM_PROMPT_PATH: str = Field(
-        default="app/prompts/system_prompt.txt",
+        default="prompts/system_prompt.txt",
         description="Path to the system prompt file"
-    )
-    
-    CONTEXT_PROMPT_PATH: str = Field(
-        default="app/prompts/context_template.txt",
-        description="Path to the context prompt template file"
     )
     
     class Config:
