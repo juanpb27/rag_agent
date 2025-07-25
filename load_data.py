@@ -30,34 +30,118 @@ def read_knowledge_file(file_path: str) -> str:
 
 def split_text_into_chunks(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
     """
-    Split text content into overlapping chunks using a sliding window approach.
-
-    Args:
-        text: The input text string.
-        chunk_size: The maximum number of characters per chunk.
-        chunk_overlap: Number of characters that overlap between chunks.
-
-    Returns:
-        A list of text chunks.
-    """
-    # Normalize whitespace
-    text = ' '.join(text.split())
+    Split text content into overlapping chunks using recursive chunking with natural separators.
     
+    Uses priority order of separators:
+    1. Double newlines (\n\n) - paragraph breaks
+    2. Single newlines (\n) - line breaks  
+    3. Periods (.) - sentence boundaries
+    4. Spaces (" ") - word boundaries
+    
+    Preserves semantic boundaries while maintaining chunk size limits and overlap.
+    """
     if not text:
         return []
-
-    chunks = []
-    start = 0
-    text_length = len(text)
-
-    while start < text_length:
-        end = min(start + chunk_size, text_length)
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        start += chunk_size - chunk_overlap  # Slide window
-
-    return chunks
+    
+    # Normalize whitespace but preserve paragraph breaks
+    text = text.strip()
+    
+    def recursive_split(text_segment: str, separators: List[str]) -> List[str]:
+        """Recursively split text using natural separators in priority order."""
+        if len(text_segment) <= chunk_size:
+            return [text_segment.strip()] if text_segment.strip() else []
+        
+        if not separators:
+            # Fallback: force split at chunk_size to avoid infinite chunks
+            chunks = []
+            for i in range(0, len(text_segment), chunk_size):
+                chunk = text_segment[i:i + chunk_size].strip()
+                if chunk:
+                    chunks.append(chunk)
+            return chunks
+        
+        separator = separators[0]
+        remaining_separators = separators[1:]
+        
+        # Split by current separator
+        parts = text_segment.split(separator)
+        
+        if len(parts) == 1:
+            # Current separator not found, try next separator
+            return recursive_split(text_segment, remaining_separators)
+        
+        chunks = []
+        current_chunk = ""
+        
+        for i, part in enumerate(parts):
+            # Reconstruct with separator (except for last part)
+            if i < len(parts) - 1:
+                part_with_sep = part + separator
+            else:
+                part_with_sep = part
+            
+            # Check if adding this part would exceed chunk size
+            if current_chunk and len(current_chunk + part_with_sep) > chunk_size:
+                # Current chunk is ready, process it
+                if current_chunk.strip():
+                    # If current chunk is still too large, recursively split it
+                    if len(current_chunk) > chunk_size:
+                        chunks.extend(recursive_split(current_chunk, remaining_separators))
+                    else:
+                        chunks.append(current_chunk.strip())
+                
+                # Start new chunk with current part
+                current_chunk = part_with_sep
+            else:
+                # Add part to current chunk
+                current_chunk += part_with_sep
+        
+        # Process final chunk
+        if current_chunk.strip():
+            if len(current_chunk) > chunk_size:
+                chunks.extend(recursive_split(current_chunk, remaining_separators))
+            else:
+                chunks.append(current_chunk.strip())
+        
+        return chunks
+    
+    # Define separators in priority order
+    separators = ["\n\n", "\n", ".", " "]
+    
+    # Get initial chunks without overlap
+    initial_chunks = recursive_split(text, separators)
+    
+    if not initial_chunks:
+        return []
+    
+    # Apply overlap between chunks
+    final_chunks = []
+    
+    for i, chunk in enumerate(initial_chunks):
+        if i == 0:
+            # First chunk - no previous overlap needed
+            final_chunks.append(chunk)
+        else:
+            # Add overlap from previous chunk
+            prev_chunk = initial_chunks[i-1]
+            
+            # Get overlap from end of previous chunk
+            overlap_text = ""
+            if len(prev_chunk) > chunk_overlap:
+                overlap_text = prev_chunk[-chunk_overlap:]
+            else:
+                overlap_text = prev_chunk
+            
+            # Combine overlap with current chunk, but respect chunk_size limit
+            combined = overlap_text + " " + chunk
+            if len(combined) <= chunk_size:
+                final_chunks.append(combined.strip())
+            else:
+                # If combined exceeds limit, just use current chunk
+                final_chunks.append(chunk)
+    
+    # Filter out empty chunks
+    return [chunk for chunk in final_chunks if chunk.strip()]
 
 
 def build_vectorstore(force_rebuild: bool = False) -> None:
@@ -113,9 +197,11 @@ def build_vectorstore(force_rebuild: bool = False) -> None:
         print(f"Loading embedding model: {settings.EMBEDDING_MODEL}")
         model = SentenceTransformer(settings.EMBEDDING_MODEL)
         
-        # Generate embeddings with normalization
+        # Generate embeddings with normalization and instruction prefix
         print("Generating embeddings...")
-        embeddings = model.encode(chunks, normalize_embeddings=True, show_progress_bar=True)
+        # Add instruction prefix for document chunks as recommended by BGE model authors
+        chunks_with_prefix = ["Represent this document for retrieval: " + chunk for chunk in chunks]
+        embeddings = model.encode(chunks_with_prefix, normalize_embeddings=True, show_progress_bar=True)
         embeddings = np.array(embeddings, dtype=np.float32)
         
         print(f"Generated embeddings with shape: {embeddings.shape}")

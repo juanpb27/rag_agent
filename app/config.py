@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     )
     
     CHUNK_SIZE: int = Field(
-        default=500,
+        default=300,
         ge=100,
         le=2000,
         description="Size of text chunks for processing (between 100-2000 characters)"
@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     )
     
     TOP_K: int = Field(
-        default=5,
+        default=10,
         ge=1,
         le=20,
         description="Number of top results to return from vectorstore queries"

@@ -50,16 +50,9 @@ def _load_vectorstore():
         
         print(f"Loaded FAISS index with {_index.ntotal} vectors and {len(_chunks)} chunks.")
 
-
 def get_relevant_chunks(query: str) -> List[str]:
     """
     Retrieve relevant document chunks from FAISS based on the query.
-    
-    Args:
-        query: The search query string
-        
-    Returns:
-        List of relevant document chunks (strings)
     """
     try:
         # Load vectorstore components if not already loaded
@@ -69,7 +62,9 @@ def get_relevant_chunks(query: str) -> List[str]:
         settings = get_settings()
         
         # Generate normalized embedding for the query
-        query_embedding = _model.encode([query], normalize_embeddings=True)
+        # Add instruction prefix for queries as recommended by BGE model authors
+        query_with_prefix = "Represent this question for retrieving supporting documents: " + query
+        query_embedding = _model.encode([query_with_prefix], normalize_embeddings=True)
         query_embedding = np.array(query_embedding, dtype=np.float32)
         
         # Validate embedding dimension matches FAISS index

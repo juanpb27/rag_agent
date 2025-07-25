@@ -200,7 +200,7 @@ def main():
         if st.button("🧹 Clear conversation", use_container_width=True, type="secondary"):
             clear_conversation()
 
-    # Main content area - solo título sin logo
+    # Main content area
     st.markdown('<h1 class="main-header">Virtual Assistant</h1>', unsafe_allow_html=True)
     
     # Display message history
