@@ -2,7 +2,8 @@
 Chat engine module for RAG Agent application.
 """
 
-from typing import List, Any
+import json
+from typing import List, Any, Dict, Optional
 from pathlib import Path
 
 from anthropic import AsyncAnthropic
@@ -10,6 +11,7 @@ from anthropic import AsyncAnthropic
 from app.config import get_settings
 from app.retriever import get_relevant_chunks
 from app.memory import load_chat_history, save_message
+from app.tools import TOOL_SCHEMAS, TOOL_FUNCTIONS_MAP
 
 
 class ChatEngine:
@@ -36,6 +38,29 @@ class ChatEngine:
     def _extract_text(self, content_blocks: List[Any]) -> str:
         """Extract text content from Anthropic response content blocks."""
         return "".join(block.text for block in content_blocks if hasattr(block, "text"))
+
+    def execute_tool_call(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a tool call and return the result."""
+        try:
+            if tool_name not in TOOL_FUNCTIONS_MAP:
+                return {"error": f"Tool '{tool_name}' not found"}
+            
+            tool_function = TOOL_FUNCTIONS_MAP[tool_name]
+            result = tool_function(**parameters)
+            return result
+        except Exception as e:
+            return {"error": f"Error executing tool '{tool_name}': {str(e)}"}
+
+    def _has_tool_use(self, content_blocks: List[Any]) -> Optional[Dict[str, Any]]:
+        """Check if response contains tool use and return tool details."""
+        for block in content_blocks:
+            if hasattr(block, "type") and block.type == "tool_use":
+                return {
+                    "name": block.name,
+                    "parameters": block.input,
+                    "id": getattr(block, "id", None)
+                }
+        return None
     
     def _prepare_messages(self, chat_history: List[dict], user_input: str) -> List[dict]:
         """Prepare messages array with chat history and current user input."""
@@ -43,7 +68,7 @@ class ChatEngine:
         
         # Add previous conversation history
         for msg in chat_history:
-            if msg.get("role") in ["user", "assistant"] and msg.get("content"):
+            if msg.get("role") in ["user", "assistant", "tool"] and msg.get("content"):
                 messages.append({
                     "role": msg["role"], 
                     "content": msg["content"]
@@ -82,14 +107,61 @@ class ChatEngine:
                 "model": self.model,
                 "max_tokens": self.max_tokens,
                 "system": full_system_prompt,
-                "messages": messages
+                "messages": messages,
+                "tools": TOOL_SCHEMAS
             }
             
             response = await self.client.messages.create(**request_params)
-            response_text = self._extract_text(response.content)
             
-            save_message(session_id, "user", user_input)
-            save_message(session_id, "assistant", response_text)
+            # Check if response contains tool use
+            tool_use = self._has_tool_use(response.content)
+            
+            if tool_use:
+                print(f"🔧 TOOL SELECTED: {tool_use['name']}")
+                print(f"📝 PARAMETERS: {json.dumps(tool_use['parameters'], indent=2)}")
+                
+                # Execute the tool
+                tool_result = self.execute_tool_call(tool_use["name"], tool_use["parameters"])
+                
+                # Add assistant response with tool_use
+                messages.append({
+                    "role": "assistant", 
+                    "content": response.content
+                })
+                
+                # Add tool result as tool_result block
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_use["id"],
+                            "content": json.dumps(tool_result)
+                        }
+                    ]
+                })
+                
+                # Make second call to get final response
+                final_request_params = {
+                    "model": self.model,
+                    "max_tokens": self.max_tokens,
+                    "system": full_system_prompt,
+                    "messages": messages,
+                    "tools": TOOL_SCHEMAS
+                }
+                
+                final_response = await self.client.messages.create(**final_request_params)
+                response_text = self._extract_text(final_response.content)
+                
+                # Save messages including tool interaction
+                save_message(session_id, "user", user_input)
+                save_message(session_id, "assistant", f"[Used tool: {tool_use['name']}] {response_text}")
+                
+            else:
+                # Regular response without tools
+                response_text = self._extract_text(response.content)
+                save_message(session_id, "user", user_input)
+                save_message(session_id, "assistant", response_text)
             
             return response_text.strip()
             
