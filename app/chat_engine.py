@@ -20,6 +20,7 @@ class ChatEngine:
         self.settings = get_settings()
         self.client = AsyncAnthropic(api_key=self.settings.ANTHROPIC_API_KEY)
         self.model = self.settings.DEFAULT_MODEL
+        self.max_tokens = self.settings.MAX_TOKENS
         self.system_prompt_template = self._load_system_prompt()
         
     def _load_system_prompt(self) -> str:
@@ -35,6 +36,23 @@ class ChatEngine:
     def _extract_text(self, content_blocks: List[Any]) -> str:
         """Extract text content from Anthropic response content blocks."""
         return "".join(block.text for block in content_blocks if hasattr(block, "text"))
+    
+    def _prepare_messages(self, chat_history: List[dict], user_input: str) -> List[dict]:
+        """Prepare messages array with chat history and current user input."""
+        messages = []
+        
+        # Add previous conversation history
+        for msg in chat_history:
+            if msg.get("role") in ["user", "assistant"] and msg.get("content"):
+                messages.append({
+                    "role": msg["role"], 
+                    "content": msg["content"]
+                })
+        
+        # Add current user input
+        messages.append({"role": "user", "content": user_input})
+        
+        return messages
  
     async def chat(self, session_id: str, user_input: str) -> str:
         """Main entrypoint for handling user queries."""
@@ -53,18 +71,16 @@ class ChatEngine:
                 retrieved_chunks=retrieved_chunks_text,
                 user_query=user_input
             )
+            
+            # Prepare messages with chat history
+            messages = self._prepare_messages(chat_history, user_input)
+
             print(f"Full system prompt: {full_system_prompt}")
-            
-            messages = []
-            for msg in chat_history:
-                if msg.get("role") in ["user", "assistant"] and msg.get("content"):
-                    messages.append({"role": msg["role"], "content": msg["content"]})
-            
-            messages.append({"role": "user", "content": user_input})
-            
+            print(f"Messages: {messages}")
+
             request_params = {
                 "model": self.model,
-                "max_tokens": 1024,
+                "max_tokens": self.max_tokens,
                 "system": full_system_prompt,
                 "messages": messages
             }

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     )
     
     TOP_K: int = Field(
-        default=3,
+        default=5,
         ge=1,
         le=20,
         description="Number of top results to return from vectorstore queries"
@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     DEFAULT_MODEL: str = Field(
         default="claude-3-haiku-20240307",
         description="Default Anthropic model to use for chat completions"
+    )
+
+    MAX_TOKENS: int = Field(
+        default=500,
+        ge=100,
+        le=1000,
+        description="Maximum number of tokens to generate in a response"
     )
     
     SYSTEM_PROMPT_PATH: str = Field(
